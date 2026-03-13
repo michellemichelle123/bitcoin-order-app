@@ -1,3 +1,5 @@
+
+
 name: Bitcoin order App
 on:
   push:
@@ -68,3 +70,102 @@ jobs:
         run: |
           npm run deploy
 
+- name: delete branch
+  run: |
+    name: Bitcoin order App
+
+# Trigger workflow on push to githubcicd branch
+on:
+  push:
+    branches:
+      - githubcicd
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [16.x]
+
+    steps:
+      # Step 1: Checkout repository
+      - uses: actions/checkout@v2
+
+      # Step 2: Setup Chrome for Angular testing
+      - uses: browser-actions/setup-chrome@latest
+
+      # Step 3: Setup Node.js
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # Step 4: Cache node_modules to speed up workflow
+      - name: Cache node modules
+        id: cache-nodemodules
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-node-modules
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+
+      # Step 5: Install dependencies
+      - name: Install Dependencies
+        if: steps.cache-nodemodules.outputs.cache-hit != 'true'
+        run: |
+          npm ci --force
+
+      # Step 6: Build Angular app
+      - name: Build
+        run: |
+          npm run build --force
+
+      # Step 7: Lint the code (static code analysis)
+      - name: Lint
+        run: |
+          ng lint
+
+      # Step 8: Check for vulnerabilities in dependencies
+      - name: Audit
+        run: |
+          npm audit fix
+
+      # Step 9: Update types to latest
+      - name: Update types to latest
+        run: |
+          npm install --save-dev @types/node@latest --force
+
+      # Step 10: Conventional changelog for releases
+      - name: Conventional Changelog Action
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@v3
+        with:
+          github-token: ${{ secrets.WORKSHOP6_GITHUB_TOKEN }}
+          output-file: "false"
+
+      # Step 11: Create GitHub release if changelog exists
+      - name: Create Release
+        uses: actions/create-release@v1
+        if: ${{ steps.changelog.outputs.skipped == 'false' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKSHOP6_GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.changelog.outputs.tag }}
+          release_name: ${{ steps.changelog.outputs.tag }}
+          body: ${{ steps.changelog.outputs.clean_changelog }}
+
+      # Step 12: Deploy to GitHub Pages
+      - name: Deploy
+        run: |
+          npm run deploy
+
+      # Step 13: Delete the githubcicd branch after successful deployment
+      - name: Delete branch
+        run: |
+          git push origin :githubcicd
